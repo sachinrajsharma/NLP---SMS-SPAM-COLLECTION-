@@ -1,0 +1,226 @@
+## Installing packages 
+install.packages(c("e1071", "caret","quanteda", "irlba","randomForest"))
+library(quanteda)
+library(irlba)
+library(caret)
+library(dplyr)
+# Load up the .csv file 
+
+spam.raw = read.csv("spam.csv",stringsAsFactors = FALSE)
+View(spam.raw)
+
+# Data cleaning 
+
+spam.raw = spam.raw[ , 1:2]
+names(spam.raw) = c("label", "text")
+View(spam.raw)
+
+# Removing duplicate entries 
+
+spam.data = unique(spam.data)
+
+sum(duplicated(spam.data))
+
+# Check if there is missing data 
+
+length(which(complete.cases(spam.raw)))
+
+length(which(!complete.cases(spam.raw)))
+
+sum(is.na(spam.raw))
+
+str(spam.raw)
+
+
+# HOW TO FIND TOTAL MISSING VALUES COLUMN WISE 
+
+sapply(spam.raw, function(x) sum(is.na(x))) 
+
+#VISUALIZING WHICH COLUMN HAS HOW MUCH PERCENTAGE OF MISSING VALUES IN THE DATA 
+
+#install.packages("naniar")
+
+library(naniar)
+vis_miss(spam.data)
+
+str(spam.data)
+#DATA EXPLORATION 
+
+# Convert our class label into a factor 
+
+
+spam.raw$label = as.factor(spam.raw$label)
+
+table(spam.raw$label)
+
+
+#spam.data= factor(spam.data$label, levels = c('ham','spam'),
+ #                       labels = c(0,1))
+
+# Now look at the distribution of ham and spam factors in the data 
+
+table(spam.raw$label) # It will show total counts 
+prop.table(table(spam.raw$label)) # It will show the percentage 
+
+
+# Now adding a new column by the name of sms_length by using nchar()
+
+spam.raw$textlength = nchar(spam.raw$text)
+View(spam.raw)
+
+summary(spam.raw$textlength)
+
+#Data visualization using ggplot()
+
+library(ggplot2)
+ggplot(spam.raw, aes(x = textlength, fill = label))+ theme_dark()  +geom_histogram(binwidth = 5)+labs(y = "sms length", title = " Distribution of sms length with labels")
+
+
+# Now splitting our data into train set and training set using caret
+# 70 % / 30% 
+library(caret)
+help(package = "caret")
+
+set.seed(32984)
+indexes = createDataPartition(spam.raw$label,times = 1,
+                                 p = 0.7, list = FALSE)
+train = spam.raw[indexes,]
+test = spam.data[-indexes,]
+
+head(train)
+head(test)
+
+# Verify whether we get proper proportions or not 
+
+prop.table(table(train$label))
+prop.table(table(test$label))
+
+
+train$text[357]
+
+library(quanteda)
+
+# STEP : 1 -  Tokenize sms text messages 
+
+train.tokens = tokens(train$text, what = "word",
+                      remove_punct = TRUE, remove_symbols = TRUE,
+                      remove_numbers = TRUE)
+
+head(train.tokens)
+train.tokens[[357]]
+
+
+#STEP: 2 : Lower case of Tokens 
+
+train.tokens = tokens_tolower(train.tokens)
+train.tokens
+# STEP : 3 - Use Quantenda's in built stop words of English 
+# It should be noted that , we should always analyse the stop words before
+# applying it to our project
+train.tokens = tokens_select(train.tokens, stopwords(), selection = "remove")
+
+train.tokens[[357]]
+
+## STEP : 4 - Stemming on the tokens 
+
+train.tokens = tokens_wordstem(train.tokens, language = "english")
+train.tokens[[357]]
+
+dfm()
+#STEP : 5 - Creating first bag-of-words model using dfm()
+
+train.tokens.dfm = dfm(train.tokens, tolower = FALSE)
+
+# STEP : 6 - Transform dfm to matrix and inspect 
+
+train.tokens.matrix = as.matrix(train.tokens.dfm)
+
+View(train.tokens.matrix[1:20,1:100])
+
+dim(train.tokens.matrix)
+
+# STEP : 7 - Lets investigate the effects of stemming on the data
+
+colnames(train.tokens.matrix)[1:50]
+
+# STEP : 7 - Cross validation of our training data set, with the help of which we are going to 
+#check the accuracy of our mode 
+# Now let us set up a feature dataframe with labels 
+
+colnames(train.tokens.df)
+
+str(train.tokens.df$document)
+train.tokens.df = cbind(label = train$label, as.data.frame(train.tokens.dfm))
+help("as.data.frame.dfm")
+
+help("Deprecated")
+# STEP : 8 Tokenization also require some pre processing before moving forwards
+# Clean up column names now, which are irrelevant : 
+
+names(train.tokens.df)= make.names(names(train.tokens.df))
+
+
+
+
+# Removing duplicate entries 
+
+spam.data = unique(spam.data)
+
+sum(duplicated(train.tokens.df))
+
+
+
+# STEP : 9 -  We are going to use Caret for 10-Fold cross validation which we are going to repeat 3 times
+set.seed(48743)
+
+cv_folds = createMultiFolds(train$label, k = 10 , times = 3)
+
+cv.cntrl = trainControl(method = "repeatedcv", number = 10 ,
+                        repeats = 3, index = cv_folds)
+
+# STEP : 10 - Our data is non-trivial in size. As during processing it will take huge
+# time , so we can use doSNOW package to cut down the execution time
+
+install.packages("doSNOW")
+library(doSNOW)
+# Time of code execution 
+start.time = Sys.time()
+
+# Create a cluster to work on 10 logical cores 
+#Note : if you have a big machine of 10 cores than you can run the follwoing 
+#option no. 1 : code, else run the option no. 2 
+
+
+#Option no. 1 
+# cl = makeCluster(10, type = "SOCK")
+#Option no. 2
+cl = makeCluster(3, type = "SOCK")
+registerDoSNOW(cl)
+# STEP 11 - Prepare single decision tree model, which we update later
+# in future model we will use feature extraction to shrink our data 
+
+
+
+# There is a column in the name of document in which text fields are there.  We need to remove it 
+
+drops <- c("document")
+train.tokens.df <- train.tokens.df[ , !(names(train.tokens.df) %in% drops)]
+
+
+
+rpart.cv.1 = train(label ~.,data = train.tokens.df, method = "rpart",
+                   trControl = cv.cntrl, tuneLength = 7)
+
+# Now processing is done 
+stopCluster(cl)
+
+# Total time of execution on workstation
+
+total.time = Sys.time() - start.time
+total.time
+
+# Check the result 
+
+rpart.cv.1
+
+
